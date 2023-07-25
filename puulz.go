@@ -11,12 +11,12 @@ type Puul[D, P any] struct {
 	datastore  []D
 	batches    [][]D
 	batchCount int
-	worker     func(data D, params ...P) error
+	worker     func(data D, params []P) error
 	errChan    chan error
 	autoRefil  bool
 }
 
-func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params ...P) error, errChan chan error) (*Puul[D, P], error) {
+func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) error, errChan chan error) (*Puul[D, P], error) {
 	if len(dataStore) < size {
 		return nil, errors.New("length of dataStore much be greater than or equal to size")
 	}
@@ -141,9 +141,9 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 	}
 }
 
-func work[D, P any](data D, dataLength int32, workerParams []P, worker func(data D, params ...P) error, errChan chan error, idx int, workerDone chan struct{}, finished *int32) {
+func work[D, P any](data D, dataLength int32, workerParams []P, worker func(data D, params []P) error, errChan chan error, idx int, workerDone chan struct{}, finished *int32) {
 	// execute worker on data
-	err := worker(data, workerParams...)
+	err := worker(data, workerParams)
 
 	// wrap and send error through errChan if worker errors
 	if err != nil {
