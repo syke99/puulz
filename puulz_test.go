@@ -36,10 +36,8 @@ func TestNewPuul(t *testing.T) {
 	// Arrange
 	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
 
-	errChan := make(chan error, len(dataStore))
-
 	// Act
-	_, err := NewPuul[data, map[string]string](2, dataStore, worker, errChan)
+	_, err := NewPuul[data, map[string]string](2, dataStore, worker)
 
 	// Assert
 	assert.NoError(t, err)
@@ -49,10 +47,8 @@ func TestNewPuul_Error(t *testing.T) {
 	// Arrange
 	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
 
-	errChan := make(chan error, len(dataStore))
-
 	// Act
-	_, err := NewPuul[data, map[string]string](7, dataStore, worker, errChan)
+	_, err := NewPuul[data, map[string]string](7, dataStore, worker)
 
 	// Assert
 	assert.Error(t, err)
@@ -63,9 +59,9 @@ func TestPuulRun(t *testing.T) {
 	// Arrange
 	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
 
-	errChan := make(chan error, len(dataStore))
+	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker)
 
-	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker, errChan)
+	errChan := pool.WithErrorChannel()
 
 	// Act
 	pool.Run([]map[string]string{greetings})
@@ -79,9 +75,9 @@ func TestPuulRun_WithAutoRefill(t *testing.T) {
 	// Arrange
 	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
 
-	errChan := make(chan error, len(dataStore))
+	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker)
 
-	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker, errChan)
+	errChan := pool.WithErrorChannel()
 
 	pool.WithAutoRefill()
 

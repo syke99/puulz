@@ -18,17 +18,15 @@ type Puul[D, P any] struct {
 
 var errPuulSize = errors.New("length of dataStore much be greater than or equal to size")
 
-func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) error, errChan chan error) (*Puul[D, P], error) {
+func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) error) (*Puul[D, P], error) {
 	if len(dataStore) < size {
 		return nil, errPuulSize
 	}
 
 	dataLength := len(dataStore)
 
-	// calculate number of batches
 	batched := dataLength / size
 
-	// divide dataStore into batches
 	total := 0
 
 	batches := make([][]D, batched)
@@ -60,16 +58,19 @@ func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) 
 		batches:    batches,
 		batchCount: 1,
 		worker:     worker,
-		errChan:    errChan,
 		autoRefil:  false,
 	}
 
 	return &p, nil
 }
 
-func (p *Puul[D, P]) WithAutoRefill() *Puul[D, P] {
+func (p *Puul[D, P]) WithErrorChannel() chan error {
+	p.errChan = make(chan error, len(p.datastore))
+	return p.errChan
+}
+
+func (p *Puul[D, P]) WithAutoRefill() {
 	p.autoRefil = true
-	return p
 }
 
 type fin struct {
@@ -86,7 +87,6 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 
 	workerDone := make(chan struct{}, dataLength)
 
-	// spin up initial goroutines
 	for i < p.size {
 		go work[D, P](p.datastore[i], dataLength, workerParams, p.worker, p.errChan, i, workerDone)
 		i++
@@ -97,7 +97,6 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 		for {
 			select {
 			case <-workerDone:
-				// count how many worker funcs have finished
 				finished.Lock()
 				finished.counter++
 				idx := finished.counter
@@ -108,16 +107,10 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 					break refillLoop
 				}
 
-				// if the initial size hasn't been reached, meaning the initial
-				// batch of workers hasn't completed, continue on to the next
-				// message in workerDone
 				if idx < p.size {
 					continue
 				}
 
-				// since p.autoRefill is true, continue to refill the Puul with
-				// worker funcs and a data source as each worker func finished
-				// until all data sources have been depleted
 				if idx >= p.size && idx < len(p.datastore) {
 					go work[D, P](p.datastore[idx], dataLength, workerParams, p.worker, p.errChan, idx, workerDone)
 				}
@@ -138,30 +131,20 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 					break batchedLoop
 				}
 
-				// if the initial size hasn't been reached, meaning the initial
-				// batch of workers hasn't completed, continue on to the next
-				// message in workerDone
 				if idx < p.size {
 					continue
 				}
 
 				mod := idx % p.size
 
-				// if mod == 0, that means the batch has completed and it's
-				// time to move on to the next batch
 				if mod == 0 {
-					// increase the batch count
 					p.batchCount++
 
-					// if there's more batches to go, carry on
 					if p.batchCount <= len(p.batches) {
 						x := 0
 
-						// get the right batch (p.batchCount starts at 1,
-						// so subtract 1 to get the correct batch)
 						dS := p.batches[p.batchCount-1]
 
-						// loop through the batch and spin up goroutines
 						for x < len(dS) {
 							dataIndex := len(p.batches[p.batchCount-1]) + x
 
@@ -179,9 +162,7 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 }
 
 func work[D, P any](data D, dataLength int, workerParams []P, worker func(data D, params []P) error, errChan chan error, idx int, workerDone chan struct{}) {
-	// execute worker on data
 	err := worker(data, workerParams)
-	// wrap and send error through errChan if worker errors
 	if err != nil && errChan != nil {
 		errChan <- fmt.Errorf("data at index: %d, error msg: %s", idx, err.Error())
 	}
