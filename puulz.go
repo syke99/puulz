@@ -6,17 +6,17 @@ import (
 	"sync/atomic"
 )
 
-type Puul[T any] struct {
+type Puul[D, P any] struct {
 	size       int
-	datastore  []T
-	batches    [][]T
+	datastore  []D
+	batches    [][]D
 	batchCount int
-	worker     func(data T) error
+	worker     func(data D, params ...P) error
 	errChan    chan error
 	autoRefil  bool
 }
 
-func NewPuul[T any](size int, dataStore []T, worker func(data T) error, errChan chan error) (*Puul[T], error) {
+func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params ...P) error, errChan chan error) (*Puul[D, P], error) {
 	if len(dataStore) < size {
 		return nil, errors.New("length of dataStore much be greater than or equal to size")
 	}
@@ -33,7 +33,7 @@ func NewPuul[T any](size int, dataStore []T, worker func(data T) error, errChan 
 	// divide dataStore into batches
 	total := 0
 
-	batches := make([][]T, batched)
+	batches := make([][]D, batched)
 
 	for total < batched {
 		offset := (size * total)
@@ -42,7 +42,7 @@ func NewPuul[T any](size int, dataStore []T, worker func(data T) error, errChan 
 		total++
 	}
 
-	p := Puul[T]{
+	p := Puul[D, P]{
 		size:       size,
 		datastore:  dataStore,
 		batches:    batches,
@@ -55,12 +55,12 @@ func NewPuul[T any](size int, dataStore []T, worker func(data T) error, errChan 
 	return &p, nil
 }
 
-func (p *Puul[T]) WithAutoRefill() *Puul[T] {
+func (p *Puul[D, P]) WithAutoRefill() *Puul[D, P] {
 	p.autoRefil = true
 	return p
 }
 
-func (p *Puul[T]) Run() {
+func (p *Puul[D, P]) Run(workerParams []P) {
 	i := 0
 
 	var finished int32
@@ -69,7 +69,7 @@ func (p *Puul[T]) Run() {
 
 	// spin up initial goroutines
 	for i < p.size {
-		go work[T](p.datastore[i], int32(len(p.datastore)), p.worker, p.errChan, i, workerDone, &finished)
+		go work[D, P](p.datastore[i], int32(len(p.datastore)), workerParams, p.worker, p.errChan, i, workerDone, &finished)
 		i++
 	}
 
@@ -88,7 +88,7 @@ func (p *Puul[T]) Run() {
 			// worker funcs and a data source as each worker func finished
 			// until all data sources have been depleted
 			if idx >= p.size && idx < len(p.datastore) {
-				go work[T](p.datastore[idx], int32(len(p.datastore)), p.worker, p.errChan, idx, workerDone, &finished)
+				go work[D, P](p.datastore[idx], int32(len(p.datastore)), workerParams, p.worker, p.errChan, idx, workerDone, &finished)
 			}
 		}
 	} else {
@@ -122,7 +122,7 @@ func (p *Puul[T]) Run() {
 					for x < len(dS) {
 						dataIndex := len(p.batches[p.batchCount-1]) + x
 
-						go work[T](dS[x], int32(len(p.datastore)), p.worker, p.errChan, dataIndex, workerDone, &finished)
+						go work[D, P](dS[x], int32(len(p.datastore)), workerParams, p.worker, p.errChan, dataIndex, workerDone, &finished)
 					}
 				}
 			}
@@ -130,9 +130,9 @@ func (p *Puul[T]) Run() {
 	}
 }
 
-func work[T any](data T, dataLength int32, worker func(data T) error, errChan chan error, idx int, workerDone chan struct{}, finished *int32) {
+func work[D, P any](data D, dataLength int32, workerParams []P, worker func(data D, params ...P) error, errChan chan error, idx int, workerDone chan struct{}, finished *int32) {
 	// execute worker on data
-	err := worker(data)
+	err := worker(data, workerParams...)
 
 	// wrap and send error through errChan if worker errors
 	if err != nil {
