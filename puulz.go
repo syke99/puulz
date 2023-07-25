@@ -36,9 +36,16 @@ func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params ...P)
 	batches := make([][]D, batched)
 
 	for total < batched {
+		previous := (size * total)
+
+		if total == batched-1 {
+			batches[total] = dataStore[previous:]
+			continue
+		}
+
 		offset := (size * total)
 
-		batches[total] = dataStore[(size * total) : offset+(size-1)]
+		batches[total] = dataStore[previous : offset+(size-1)]
 		total++
 	}
 
