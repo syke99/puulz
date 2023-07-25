@@ -21,10 +21,12 @@ func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params ...P)
 		return nil, errors.New("length of dataStore much be greater than or equal to size")
 	}
 
-	// calculate number of batches
-	batched := len(dataStore) / size
+	dataLength := len(dataStore)
 
-	bMod := len(dataStore) % size
+	// calculate number of batches
+	batched := dataLength / size
+
+	bMod := dataLength % size
 
 	if bMod != 0 {
 		batched++
@@ -74,9 +76,11 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 
 	workerDone := make(chan struct{})
 
+	dataLength := int32(len(p.datastore))
+
 	// spin up initial goroutines
 	for i < p.size {
-		go work[D, P](p.datastore[i], int32(len(p.datastore)), workerParams, p.worker, p.errChan, i, workerDone, &finished)
+		go work[D, P](p.datastore[i], dataLength, workerParams, p.worker, p.errChan, i, workerDone, &finished)
 		i++
 	}
 
@@ -87,15 +91,15 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 			// if the initial size hasn't been reached, meaning the initial
 			// batch of workers hasn't completed, continue on to the next
 			// message in workerDone
-			if idx < p.size {
+			if idx <= p.size {
 				continue
 			}
 
 			// since p.autoRefill is true, continue to refill the Puul with
 			// worker funcs and a data source as each worker func finished
 			// until all data sources have been depleted
-			if idx >= p.size && idx < len(p.datastore) {
-				go work[D, P](p.datastore[idx], int32(len(p.datastore)), workerParams, p.worker, p.errChan, idx, workerDone, &finished)
+			if idx > p.size && idx < len(p.datastore) {
+				go work[D, P](p.datastore[idx], dataLength, workerParams, p.worker, p.errChan, idx, workerDone, &finished)
 			}
 		}
 	} else {
@@ -129,7 +133,7 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 					for x < len(dS) {
 						dataIndex := len(p.batches[p.batchCount-1]) + x
 
-						go work[D, P](dS[x], int32(len(p.datastore)), workerParams, p.worker, p.errChan, dataIndex, workerDone, &finished)
+						go work[D, P](dS[x], dataLength, workerParams, p.worker, p.errChan, dataIndex, workerDone, &finished)
 					}
 				}
 			}
