@@ -3,7 +3,7 @@ package puulz
 import (
 	"errors"
 	"fmt"
-	"sync/atomic"
+	"sync"
 )
 
 type Puul[D, P any] struct {
@@ -38,14 +38,21 @@ func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) 
 	batches := make([][]D, batched)
 
 	for total < batched {
-		previous := (size * total)
-
-		if total == batched-1 {
-			batches[total] = dataStore[previous:]
+		if total == 0 {
+			batches[total] = dataStore[:size]
+			total++
 			continue
 		}
 
-		offset := (size * total)
+		previous := size * total
+
+		if total == batched-1 {
+			batches[total] = dataStore[previous:]
+			total++
+			continue
+		}
+
+		offset := size * total
 
 		batches[total] = dataStore[previous : offset+(size-1)]
 		total++
@@ -69,96 +76,118 @@ func (p *Puul[D, P]) WithAutoRefill() *Puul[D, P] {
 	return p
 }
 
+type fin struct {
+	sync.RWMutex
+	counter int
+}
+
 func (p *Puul[D, P]) Run(workerParams []P) {
 	i := 0
 
-	var finished int32
+	var finished fin
 
-	workerDone := make(chan struct{})
+	dataLength := len(p.datastore)
 
-	dataLength := int32(len(p.datastore))
+	workerDone := make(chan struct{}, dataLength)
 
 	// spin up initial goroutines
 	for i < p.size {
-		go work[D, P](p.datastore[i], dataLength, workerParams, p.worker, p.errChan, i, workerDone, &finished)
+		go work[D, P](p.datastore[i], dataLength, workerParams, p.worker, p.errChan, i, workerDone)
 		i++
 	}
 
 	if p.autoRefil {
-		for range workerDone {
-			// count how many worker funcs have finished
-			idx := int(atomic.LoadInt32(&finished))
-			// if the initial size hasn't been reached, meaning the initial
-			// batch of workers hasn't completed, continue on to the next
-			// message in workerDone
-			if idx <= p.size {
-				continue
-			}
+	refillLoop:
+		for {
+			select {
+			case <-workerDone:
+				// count how many worker funcs have finished
+				finished.Lock()
+				finished.counter++
+				idx := finished.counter
+				finished.Unlock()
 
-			// since p.autoRefill is true, continue to refill the Puul with
-			// worker funcs and a data source as each worker func finished
-			// until all data sources have been depleted
-			if idx > p.size && idx < len(p.datastore) {
-				go work[D, P](p.datastore[idx], dataLength, workerParams, p.worker, p.errChan, idx, workerDone, &finished)
+				if idx == dataLength {
+					close(workerDone)
+					break refillLoop
+				}
+
+				// if the initial size hasn't been reached, meaning the initial
+				// batch of workers hasn't completed, continue on to the next
+				// message in workerDone
+				if idx < p.size {
+					continue
+				}
+
+				// since p.autoRefill is true, continue to refill the Puul with
+				// worker funcs and a data source as each worker func finished
+				// until all data sources have been depleted
+				if idx >= p.size && idx < len(p.datastore) {
+					go work[D, P](p.datastore[idx], dataLength, workerParams, p.worker, p.errChan, idx, workerDone)
+				}
 			}
 		}
 	} else {
-		for range workerDone {
-			// count how many worker funcs have finished
-			idx := int(atomic.LoadInt32(&finished))
-			// if the initial size hasn't been reached, meaning the initial
-			// batch of workers hasn't completed, continue on to the next
-			// message in workerDone
-			if idx < p.size {
-				continue
-			}
+	batchedLoop:
+		for {
+			select {
+			case <-workerDone:
+				finished.Lock()
+				finished.counter++
+				idx := finished.counter
+				finished.Unlock()
 
-			mod := idx % p.size
+				if idx == dataLength {
+					close(workerDone)
+					break batchedLoop
+				}
 
-			// if mod == 0, that means the batch has completed and it's
-			// time to move on to the next batch
-			if mod == 0 {
-				// increase the batch count
-				p.batchCount++
+				// if the initial size hasn't been reached, meaning the initial
+				// batch of workers hasn't completed, continue on to the next
+				// message in workerDone
+				if idx < p.size {
+					continue
+				}
 
-				// if there's more batches to go, carry on
-				if p.batchCount <= len(p.batches) {
-					x := 0
+				mod := idx % p.size
 
-					// get the right batch (p.batchCount starts at 1,
-					// so subtract 1 to get the correct batch)
-					dS := p.batches[p.batchCount-1]
+				// if mod == 0, that means the batch has completed and it's
+				// time to move on to the next batch
+				if mod == 0 {
+					// increase the batch count
+					p.batchCount++
 
-					// loop through the batch and spin up goroutines
-					for x < len(dS) {
-						dataIndex := len(p.batches[p.batchCount-1]) + x
+					// if there's more batches to go, carry on
+					if p.batchCount <= len(p.batches) {
+						x := 0
 
-						go work[D, P](dS[x], dataLength, workerParams, p.worker, p.errChan, dataIndex, workerDone, &finished)
+						// get the right batch (p.batchCount starts at 1,
+						// so subtract 1 to get the correct batch)
+						dS := p.batches[p.batchCount-1]
+
+						// loop through the batch and spin up goroutines
+						for x < len(dS) {
+							dataIndex := len(p.batches[p.batchCount-1]) + x
+
+							go work[D, P](dS[x], dataLength, workerParams, p.worker, p.errChan, dataIndex, workerDone)
+						}
 					}
 				}
 			}
 		}
 	}
+	if p.errChan != nil {
+		close(p.errChan)
+	}
 }
 
-func work[D, P any](data D, dataLength int32, workerParams []P, worker func(data D, params []P) error, errChan chan error, idx int, workerDone chan struct{}, finished *int32) {
+func work[D, P any](data D, dataLength int, workerParams []P, worker func(data D, params []P) error, errChan chan error, idx int, workerDone chan struct{}) {
 	// execute worker on data
 	err := worker(data, workerParams)
-
 	// wrap and send error through errChan if worker errors
-	if err != nil {
+	if err != nil && errChan != nil {
 		errChan <- fmt.Errorf("data at index: %d, error msg: %s", idx, err.Error())
 	}
 
-	// once worker finishes, increment number of workers finished
-	atomic.AddInt32(finished, 1)
-
 	workerDone <- struct{}{}
-
-	// if the number of finished workers is equal to the total
-	// number of data sources to execute a worker for, then
-	// close the workerDone chan
-	if atomic.LoadInt32(finished) == dataLength {
-		close(workerDone)
-	}
 }
