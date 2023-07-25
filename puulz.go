@@ -16,21 +16,17 @@ type Puul[D, P any] struct {
 	autoRefil  bool
 }
 
+var errPuulSize = errors.New("length of dataStore much be greater than or equal to size")
+
 func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) error, errChan chan error) (*Puul[D, P], error) {
 	if len(dataStore) < size {
-		return nil, errors.New("length of dataStore much be greater than or equal to size")
+		return nil, errPuulSize
 	}
 
 	dataLength := len(dataStore)
 
 	// calculate number of batches
 	batched := dataLength / size
-
-	bMod := dataLength % size
-
-	if bMod != 0 {
-		batched++
-	}
 
 	// divide dataStore into batches
 	total := 0
@@ -54,7 +50,7 @@ func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) 
 
 		offset := size * total
 
-		batches[total] = dataStore[previous : offset+(size-1)]
+		batches[total] = dataStore[previous : previous+offset]
 		total++
 	}
 
@@ -170,6 +166,7 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 							dataIndex := len(p.batches[p.batchCount-1]) + x
 
 							go work[D, P](dS[x], dataLength, workerParams, p.worker, p.errChan, dataIndex, workerDone)
+							x++
 						}
 					}
 				}

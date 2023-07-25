@@ -32,6 +32,49 @@ func worker(d data, params []map[string]string) error {
 	return nil
 }
 
+func TestNewPuul(t *testing.T) {
+	// Arrange
+	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
+
+	errChan := make(chan error, len(dataStore))
+
+	// Act
+	_, err := NewPuul[data, map[string]string](2, dataStore, worker, errChan)
+
+	// Assert
+	assert.NoError(t, err)
+}
+
+func TestNewPuul_Error(t *testing.T) {
+	// Arrange
+	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
+
+	errChan := make(chan error, len(dataStore))
+
+	// Act
+	_, err := NewPuul[data, map[string]string](7, dataStore, worker, errChan)
+
+	// Assert
+	assert.Error(t, err)
+	assert.Equal(t, errPuulSize, err)
+}
+
+func TestPuulRun(t *testing.T) {
+	// Arrange
+	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
+
+	errChan := make(chan error, len(dataStore))
+
+	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker, errChan)
+
+	// Act
+	pool.Run([]map[string]string{greetings})
+
+	for err := range errChan {
+		assert.Regexp(t, regexp.MustCompile("data at index: (1|3), error msg: this worker failed"), err)
+	}
+}
+
 func TestPuulRun_WithAutoRefill(t *testing.T) {
 	// Arrange
 	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
@@ -42,7 +85,7 @@ func TestPuulRun_WithAutoRefill(t *testing.T) {
 
 	pool.WithAutoRefill()
 
-	// Run
+	// Act
 	pool.Run([]map[string]string{greetings})
 
 	for err := range errChan {
