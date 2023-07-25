@@ -55,6 +55,19 @@ func TestNewPuul_Error(t *testing.T) {
 	assert.Equal(t, errPuulSize, err)
 }
 
+func TestWithErrorChannel(t *testing.T) {
+	// Arrange
+	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
+
+	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker)
+
+	// Act
+	_ = pool.WithErrorChannel()
+
+	// Assert
+	assert.NotNil(t, pool.errChan)
+}
+
 func TestPuulRun(t *testing.T) {
 	// Arrange
 	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
