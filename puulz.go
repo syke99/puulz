@@ -92,9 +92,10 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 		i++
 	}
 
+	loop := true
+
 	if p.autoRefil {
-	refillLoop:
-		for {
+		for loop {
 			select {
 			case <-workerDone:
 				finished.Lock()
@@ -104,7 +105,8 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 
 				if idx == dataLength {
 					close(workerDone)
-					break refillLoop
+					loop = false
+					break
 				}
 
 				if idx < p.size {
@@ -117,8 +119,7 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 			}
 		}
 	} else {
-	batchedLoop:
-		for {
+		for loop {
 			select {
 			case <-workerDone:
 				finished.Lock()
@@ -128,7 +129,8 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 
 				if idx == dataLength {
 					close(workerDone)
-					break batchedLoop
+					loop = false
+					break
 				}
 
 				if idx < p.size {
