@@ -52,7 +52,7 @@ func TestNewPuul_Error(t *testing.T) {
 
 	// Assert
 	assert.Error(t, err)
-	assert.Equal(t, errPuulSize, err)
+	assert.Equal(t, ErrPuulSize, err)
 }
 
 func TestWithErrorChannel(t *testing.T) {

@@ -6,6 +6,8 @@ import (
 	"sync"
 )
 
+// Puul holds datastore of data to be processed and the worker func to be processed for each
+// piece of data in the datastore, and represents a generic worker pool
 type Puul[D, P any] struct {
 	size       int
 	datastore  []D
@@ -16,11 +18,19 @@ type Puul[D, P any] struct {
 	autoRefil  bool
 }
 
-var errPuulSize = errors.New("length of dataStore much be greater than or equal to size")
+var ErrPuulSize = errors.New("length of dataStore much be greater than or equal to size")
 
+// NewPuul takes in a size to limit the amount of worker funcs to be running concurrently at once,
+// a generic datastore (if the worker funcs need to opperate on some data), and a worker func with
+// the function signature of func(data D, params []P) error. NewPuul (as well as the returned Puul
+// and all methods implemented on it) is generic where D is the datastore and P are params to be
+// passed to worker funcs whenever calling (*Puul[D, P]).Run(). Whenever creating a new Puul, if
+// no specific data needs to be processed, but instead, the worker funcs will have their own
+// functionality independent of data, then create a slice of empty structs to be passed to determine
+// how many worker funcs will be ran in total
 func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) error) (*Puul[D, P], error) {
 	if len(dataStore) < size {
-		return nil, errPuulSize
+		return nil, ErrPuulSize
 	}
 
 	dataLength := len(dataStore)
@@ -64,11 +74,19 @@ func NewPuul[D, P any](size int, dataStore []D, worker func(data D, params []P) 
 	return &p, nil
 }
 
+// WithErrorChannel returns a buffered chan error to collect any errors returned from
+// worker funcs. (*Puul[D, P]).Run() will handle closing this channel. Simply range
+// over the channel after calling (*Puul[D, P]).Run() to collect any errors
 func (p *Puul[D, P]) WithErrorChannel() chan error {
+	// p.errChan = make(chan error)
 	p.errChan = make(chan error, len(p.datastore))
 	return p.errChan
 }
 
+// WithAutoRefill will automatically refill the Puul with a new worker func (if any
+// data items are left in the datastore to process) once one worker func finishes.
+// Puuls will default to running in a batched state, so this method must be called
+// before calling (*Puul[D, P]).Run() to toggle this behavior
 func (p *Puul[D, P]) WithAutoRefill() {
 	p.autoRefil = true
 }
@@ -78,6 +96,10 @@ type fin struct {
 	counter int
 }
 
+// Run accepts a slice of generic parameters to be passed to each worker func,
+// then spins up goroutines up to the specified size, and then either processes
+// remaining data sources in a batched behavior, or will replenish the Puul
+// automatically if (*Puul[D, P]).WithAutoRefill() was called beforehand
 func (p *Puul[D, P]) Run(workerParams []P) {
 	i := 0
 
