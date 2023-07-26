@@ -80,7 +80,7 @@ func TestPuulRun(t *testing.T) {
 	pool.Run([]map[string]string{greetings})
 
 	for err := range errChan {
-		assert.Regexp(t, regexp.MustCompile("\"index\": (1|3), \"error_msg\": \"this worker failed\""), err)
+		assert.Regexp(t, regexp.MustCompile("{\"index\": (1|3), \"error_msg\": \"this worker failed\"}"), err)
 	}
 }
 
@@ -98,6 +98,6 @@ func TestPuulRun_WithAutoRefill(t *testing.T) {
 	pool.Run([]map[string]string{greetings})
 
 	for err := range errChan {
-		assert.Regexp(t, regexp.MustCompile("\"index\": (1|3), \"error_msg\": \"this worker failed\""), err)
+		assert.Regexp(t, regexp.MustCompile("{\"index\": (1|3), \"error_msg\": \"this worker failed\"}"), err)
 	}
 }

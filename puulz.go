@@ -188,7 +188,7 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 func work[D, P any](data D, dataLength int, workerParams []P, worker func(data D, params []P) error, errChan chan error, idx int, workerDone chan struct{}) {
 	err := worker(data, workerParams)
 	if err != nil && errChan != nil {
-		errChan <- fmt.Errorf("{\"index\": %d, \"error_msg\": \"%s\"", idx, err.Error())
+		errChan <- fmt.Errorf("{\"index\": %d, \"error_msg\": \"%s\"}", idx, err.Error())
 	}
 
 	workerDone <- struct{}{}
