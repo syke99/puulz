@@ -114,67 +114,59 @@ func (p *Puul[D, P]) Run(workerParams []P) {
 		i++
 	}
 
-	loop := true
-
 	if p.autoRefil {
-		for loop {
-			select {
-			case <-workerDone:
-				finished.Lock()
-				finished.counter++
-				idx := finished.counter
-				finished.Unlock()
+		for {
+			<-workerDone
+			finished.Lock()
+			finished.counter++
+			idx := finished.counter
+			finished.Unlock()
 
-				if idx == dataLength {
-					close(workerDone)
-					loop = false
-					break
-				}
+			if idx == dataLength {
+				close(workerDone)
+				break
+			}
 
-				if idx < p.size {
-					continue
-				}
+			if idx < p.size {
+				continue
+			}
 
-				if idx >= p.size && idx < len(p.datastore) {
-					go work[D, P](p.datastore[idx], dataLength, workerParams, p.worker, p.errChan, idx, workerDone)
-				}
+			if idx >= p.size && idx < len(p.datastore) {
+				go work[D, P](p.datastore[idx], dataLength, workerParams, p.worker, p.errChan, idx, workerDone)
 			}
 		}
 	} else {
-		for loop {
-			select {
-			case <-workerDone:
-				finished.Lock()
-				finished.counter++
-				idx := finished.counter
-				finished.Unlock()
+		for {
+			<-workerDone
+			finished.Lock()
+			finished.counter++
+			idx := finished.counter
+			finished.Unlock()
 
-				if idx == dataLength {
-					close(workerDone)
-					loop = false
-					break
-				}
+			if idx == dataLength {
+				close(workerDone)
+				break
+			}
 
-				if idx < p.size {
-					continue
-				}
+			if idx < p.size {
+				continue
+			}
 
-				mod := idx % p.size
+			mod := idx % p.size
 
-				if mod == 0 {
-					p.batchCount++
+			if mod == 0 {
+				p.batchCount++
 
-					if p.batchCount <= len(p.batches) {
-						x := 0
+				if p.batchCount <= len(p.batches) {
+					x := 0
 
-						dS := p.batches[p.batchCount-1]
+					dS := p.batches[p.batchCount-1]
 
-						for x < len(dS) {
-							dataIndex := len(p.batches[p.batchCount-1]) + x
+					for x < len(dS) {
+						dataIndex := len(p.batches[p.batchCount-1]) + x
 
-							go work[D, P](dS[x], dataLength, workerParams, p.worker, p.errChan, dataIndex, workerDone)
-							x++
-						}
+						go work[D, P](dS[x], dataLength, workerParams, p.worker, p.errChan, dataIndex, workerDone)
+						x++
 					}
 				}
 			}
