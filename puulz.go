@@ -18,6 +18,8 @@ type Puul[D, P any] struct {
 	autoRefil  bool
 }
 
+// ErrPuulSize is the error returned if the length of the dataStore is less than the size
+// whenever calling NewPuul()
 var ErrPuulSize = errors.New("length of dataStore much be greater than or equal to size")
 
 // NewPuul takes in a size to limit the amount of worker funcs to be running concurrently at once,
