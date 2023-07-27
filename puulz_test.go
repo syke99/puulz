@@ -9,11 +9,38 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var greetings = map[string]string{
+var greetings = []map[string]string{{
 	"english":  "hello",
 	"spanish":  "hola",
 	"mandarin": "ni hao",
 	"french":   "bonjour",
+}}
+
+var dataStore = []data{
+	{
+		fail:     false,
+		greeting: "english",
+	},
+	{
+		fail:     true,
+		greeting: "",
+	},
+	{
+		fail:     false,
+		greeting: "spanish",
+	},
+	{
+		fail:     true,
+		greeting: "",
+	},
+	{
+		fail:     false,
+		greeting: "mandarin",
+	},
+	{
+		fail:     false,
+		greeting: "french",
+	},
 }
 
 type data struct {
@@ -33,9 +60,6 @@ func worker(d data, params []map[string]string) error {
 }
 
 func TestNewPuul(t *testing.T) {
-	// Arrange
-	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
-
 	// Act
 	_, err := NewPuul[data, map[string]string](2, dataStore, worker)
 
@@ -45,8 +69,6 @@ func TestNewPuul(t *testing.T) {
 
 func TestNewPuul_Error(t *testing.T) {
 	// Arrange
-	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
-
 	// Act
 	_, err := NewPuul[data, map[string]string](7, dataStore, worker)
 
@@ -57,8 +79,6 @@ func TestNewPuul_Error(t *testing.T) {
 
 func TestWithErrorChannel(t *testing.T) {
 	// Arrange
-	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
-
 	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker)
 
 	// Act
@@ -70,14 +90,12 @@ func TestWithErrorChannel(t *testing.T) {
 
 func TestPuulRun(t *testing.T) {
 	// Arrange
-	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
-
 	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker)
 
 	errChan := pool.WithErrorChannel()
 
 	// Act
-	pool.Run([]map[string]string{greetings})
+	pool.Run(greetings)
 
 	for err := range errChan {
 		assert.Regexp(t, regexp.MustCompile("{\"index\": (1|3), \"error_msg\": \"this worker failed\"}"), err)
@@ -86,8 +104,6 @@ func TestPuulRun(t *testing.T) {
 
 func TestPuulRun_WithAutoRefill(t *testing.T) {
 	// Arrange
-	dataStore := []data{{fail: false, greeting: "english"}, {fail: true, greeting: ""}, {fail: false, greeting: "spanish"}, {fail: true, greeting: ""}, {fail: false, greeting: "mandarin"}, {fail: false, greeting: "french"}}
-
 	pool, _ := NewPuul[data, map[string]string](2, dataStore, worker)
 
 	errChan := pool.WithErrorChannel()
@@ -95,7 +111,7 @@ func TestPuulRun_WithAutoRefill(t *testing.T) {
 	pool.WithAutoRefill()
 
 	// Act
-	pool.Run([]map[string]string{greetings})
+	pool.Run(greetings)
 
 	for err := range errChan {
 		assert.Regexp(t, regexp.MustCompile("{\"index\": (1|3), \"error_msg\": \"this worker failed\"}"), err)
