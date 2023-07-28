@@ -1,21 +1,27 @@
 package puulz
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Puul holds datastore of data to be processed and the worker func to be processed for each
 // piece of data in the datastore, and represents a generic worker pool
 type Puul[D, P any] struct {
-	size       int
-	datastore  []D
-	batches    [][]D
-	batchCount int
-	worker     func(data D, params []P) error
-	errChan    chan error
-	autoRefil  bool
+	size        int
+	datastore   []D
+	batches     [][]D
+	batchCount  int
+	worker      func(data D, params []P) error
+	errChan     chan error
+	autoRefil   bool
+	cancel      context.CancelFunc
+	ctx         context.Context
+	withCancel  bool
+	withTimeout bool
 }
 
 // ErrPuulSize is the error returned if the length of the dataStore is less than the size
@@ -93,6 +99,29 @@ func (p *Puul[D, P]) WithAutoRefill() {
 	p.autoRefil = true
 }
 
+// WithCancel is a wrapper around context.WithCancel(ctx context.Context)
+// to make a Puul cancelable
+func (p *Puul[D, P]) WithCancel(ctx context.Context) (context.Context, context.CancelFunc) {
+	c, cancelFunc := context.WithCancel(ctx)
+
+	p.ctx = c
+	p.withCancel = true
+
+	return c, cancelFunc
+}
+
+// WithTimeout is a wrapper around context.WithTimeout(ctx context.Context, duration time.Duration)
+// to make a Puul timeout after the specified duration
+func (p *Puul[D, P]) WithTimeout(ctx context.Context, duration time.Duration) context.Context {
+	c, cancelFunc := context.WithTimeout(ctx, duration)
+
+	p.ctx = c
+	p.cancel = cancelFunc
+	p.withTimeout = true
+
+	return c
+}
+
 type fin struct {
 	sync.RWMutex
 	counter int
@@ -102,7 +131,51 @@ type fin struct {
 // then spins up goroutines up to the specified size, and then either processes
 // remaining data sources in a batched behavior, or will replenish the Puul
 // automatically if (*Puul[D, P]).WithAutoRefill() was called beforehand
-func (p *Puul[D, P]) Run(workerParams []P) {
+func (p *Puul[D, P]) Run(workerParams []P) error {
+	var err error
+
+	if p.withCancel {
+		err = p.runWithContext(workerParams)
+	} else if p.withTimeout {
+		defer p.cancel()
+		err = p.runWithContext(workerParams)
+	} else {
+		p.run(workerParams)
+	}
+
+	return err
+}
+
+func (p *Puul[D, P]) runWithContext(workerParams []P) error {
+	breakout := true
+
+	var err error
+
+	fire := make(chan struct{})
+
+	fired := false
+
+	for breakout {
+		select {
+		case <-p.ctx.Done():
+			breakout = false
+			err = p.ctx.Err()
+			break
+		case <-fire:
+			close(fire)
+			p.run(workerParams)
+		default:
+			if !fired {
+				fired = true
+				fire <- struct{}{}
+			}
+		}
+	}
+
+	return err
+}
+
+func (p *Puul[D, P]) run(workerParams []P) {
 	i := 0
 
 	var finished fin
